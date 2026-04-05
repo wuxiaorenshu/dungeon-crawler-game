@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>地牢探索 - Dungeon Crawler</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0a0f; color: #e0e0e0; font-family: 'Courier New', monospace; display: flex; flex-direction: column; align-items: center; min-height: 100vh; padding: 20px; }
+  h1 { color: #ffd700; font-size: 1.8em; margin-bottom: 4px; text-shadow: 0 0 10px #ffd70088; }
+  .subtitle { color: #888; font-size: 0.8em; margin-bottom: 16px; }
+  .game-container { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; justify-content: center; }
+  canvas { border: 2px solid #333; background: #111; image-rendering: pixelated; }
+  .panel { width: 220px; display: flex; flex-direction: column; gap: 10px; }
+  .card { background: #16161e; border: 1px solid #2a2a3a; border-radius: 6px; padding: 12px; }
+  .card h3 { color: #ffd700; font-size: 0.85em; margin-bottom: 8px; border-bottom: 1px solid #2a2a3a; padding-bottom: 4px; }
+  .stat-row { display: flex; justify-content: space-between; font-size: 0.82em; margin: 3px 0; }
+  .stat-label { color: #888; }
+  .stat-val { color: #fff; font-weight: bold; }
+  .hp-bar { height: 8px; background: #2a0000; border-radius: 4px; margin: 4px 0; overflow: hidden; }
+  .hp-fill { height: 100%; background: linear-gradient(90deg, #c0392b, #e74c3c); border-radius: 4px; transition: width 0.3s; }
+  .xp-bar { height: 6px; background: #1a1a2e; border-radius: 4px; margin: 4px 0; overflow: hidden; }
+  .xp-fill { height: 100%; background: linear-gradient(90deg, #8e44ad, #9b59b6); border-radius: 4px; transition: width 0.3s; }
+  .log { height: 160px; overflow-y: auto; font-size: 0.75em; line-height: 1.6; }
+  .log p { padding: 1px 0; border-bottom: 1px solid #1a1a1a; }
+  .log .dmg { color: #e74c3c; }
+  .log .heal { color: #2ecc71; }
+  .log .item { color: #f39c12; }
+  .log .level { color: #ffd700; }
+  .log .info { color: #95a5a6; }
+  .log .kill { color: #e67e22; }
+  .controls { font-size: 0.75em; color: #666; line-height: 1.8; }
+  .controls span { color: #aaa; }
+  .btn { background: #1e1e2e; border: 1px solid #444; color: #ccc; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-family: inherit; font-size: 0.8em; transition: all 0.2s; }
+  .btn:hover { background: #2a2a3e; border-color: #ffd700; color: #ffd700; }
+  .floor-badge { text-align: center; color: #ffd700; font-size: 0.9em; }
+  .skills { display: flex; gap: 6px; flex-wrap: wrap; }
+  .skill-btn { background: #1a1a2e; border: 1px solid #333; border-radius: 4px; padding: 4px 8px; font-size: 0.75em; cursor: pointer; color: #aaa; transition: all 0.2s; position: relative; }
+  .skill-btn:hover:not(:disabled) { border-color: #9b59b6; color: #9b59b6; }
+  .skill-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .skill-btn .cd { position: absolute; top: -6px; right: -6px; background: #c0392b; color: #fff; border-radius: 50%; width: 14px; height: 14px; font-size: 0.65em; display: flex; align-items: center; justify-content: center; }
+  .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000000cc; display: flex; align-items: center; justify-content: center; z-index: 10; }
+  .overlay-box { background: #16161e; border: 2px solid #ffd700; border-radius: 10px; padding: 30px 40px; text-align: center; }
+  .overlay-box h2 { color: #ffd700; font-size: 1.5em; margin-bottom: 10px; }
+  .overlay-box p { color: #aaa; margin: 6px 0; font-size: 0.9em; }
+  .overlay-box .big { color: #fff; font-size: 1.1em; }
+</style>
+</head>
+<body>
+<h1>⚔ 地牢探索</h1>
+<p class="subtitle">Dungeon Crawler — WASD/方向键移动，探索地牢，击败怪物</p>
+<div class="game-container">
+  <div class="panel">
+    <div class="card">
+      <h3>👤 角色状态</h3>
+      <div class="stat-row"><span class="stat-label">等级</span><span class="stat-val" id="s-lv">1</span></div>
+      <div class="hp-bar"><div class="hp-fill" id="hp-fill" style="width:100%"></div></div>
+      <div class="stat-row"><span class="stat-label">生命</span><span class="stat-val" id="s-hp">100/100</span></div>
+      <div class="xp-bar"><div class="xp-fill" id="xp-fill" style="width:0%"></div></div>
+      <div class="stat-row"><span class="stat-label">经验</span><span class="stat-val" id="s-xp">0/50</span></div>
+      <div class="stat-row"><span class="stat-label">攻击</span><span class="stat-val" id="s-atk">8</span></div>
+      <div class="stat-row"><span class="stat-label">防御</span><span class="stat-val" id="s-def">2</span></div>
+      <div class="stat-row"><span class="stat-label">金币</span><span class="stat-val" id="s-gold">0</span></div>
+    </div>
+    <div class="card">
+      <h3>✨ 技能</h3>
+      <div class="skills">
+        <button class="skill-btn" id="sk-slash" onclick="useSkill('slash')" title="重斩：造成150%伤害">⚔重斩<br><small>Q</small></button>
+        <button class="skill-btn" id="sk-heal" onclick="useSkill('heal')" title="治愈：恢复30%最大生命">💚治愈<br><small>E</small></button>
+        <button class="skill-btn" id="sk-dash" onclick="useSkill('dash')" title="冲刺：向前冲2格">💨冲刺<br><small>R</small></button>
+      </div>
+    </div>
+    <div class="card">
+      <h3>🎮 操作说明</h3>
+      <div class="controls">
+        <span>WASD / 方向键</span> 移动<br>
+        <span>碰到怪物</span> 自动攻击<br>
+        <span>Q</span> 重斩技能<br>
+        <span>E</span> 治愈技能<br>
+        <span>R</span> 冲刺技能<br>
+        <span>踩到楼梯</span> 下一层
+      </div>
+    </div>
+    <button class="btn" onclick="newGame()">🔄 重新开始</button>
+  </div>
+
+  <div>
+    <div class="floor-badge" id="floor-badge">第 1 层</div>
+    <canvas id="canvas" width="480" height="480"></canvas>
+  </div>
+
+  <div class="panel">
+    <div class="card">
+      <h3>📜 战斗日志</h3>
+      <div class="log" id="log"></div>
+    </div>
+    <div class="card">
+      <h3>🗺 图例</h3>
+      <div class="controls" style="line-height:2.2">
+        <img src="player.png"  width="20" height="20" style="vertical-align:middle;image-rendering:pixelated"> 玩家<br>
+        <img src="goblin.png"  width="20" height="20" style="vertical-align:middle;image-rendering:pixelated"> 哥布林 (弱)<br>
+        <img src="orc.png"     width="20" height="20" style="vertical-align:middle;image-rendering:pixelated"> 兽人 (中)<br>
+        <img src="demon.png"   width="20" height="20" style="vertical-align:middle;image-rendering:pixelated"> 恶魔 (强)<br>
+        <img src="heal.png"    width="20" height="20" style="vertical-align:middle;image-rendering:pixelated"> 治疗药水<br>
+        <img src="gold.png"    width="20" height="20" style="vertical-align:middle;image-rendering:pixelated"> 金币<br>
+        <img src="stair.png"   width="20" height="20" style="vertical-align:middle;image-rendering:pixelated"> 下层楼梯<br>
+        <img src="wall.png"    width="20" height="20" style="vertical-align:middle;image-rendering:pixelated"> 墙壁<br>
+        <img src="floor.png"   width="20" height="20" style="vertical-align:middle;image-rendering:pixelated"> 地板<br>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="overlay" style="display:none">
+  <div class="overlay-box" id="overlay-box"></div>
+</div>
+
+<script>
+const TILE = 32, COLS = 15, ROWS = 15;
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+// ── 图片预加载 ────────────────────────────────────────────
+const IMGS = {};
+const IMG_SRCS = {
+  wall:   'wall.png',
+  floor:  'floor.png',
+  stair:  'stair.png',
+  heal:   'heal.png',
+  gold:   'gold.png',
+  goblin: 'goblin.png',
+  orc:    'orc.png',
+  demon:  'demon.png',
+  player: 'player.png',
+};
+let imgsLoaded = false;
+
+function preloadImages(callback) {
+  const keys = Object.keys(IMG_SRCS);
+  let count = 0;
+  for (const key of keys) {
+    const img = new Image();
+    img.onload = img.onerror = () => { if (++count === keys.length) { imgsLoaded = true; callback(); } };
+    img.src = IMG_SRCS[key];
+    IMGS[key] = img;
+  }
+}
+
+// ── 游戏状态 ──────────────────────────────────────────────
+let G; // game state
+
+function newGame() {
+  G = {
+    floor: 1,
+    player: { x:1, y:1, hp:100, maxHp:100, atk:8, def:2, xp:0, xpNext:50, level:1, gold:0, dir:1 },
+    map: [], rooms: [], enemies: [], items: [],
+    skills: { slash:{cd:0,maxCd:4}, heal:{cd:0,maxCd:6}, dash:{cd:0,maxCd:5} },
+    turn: 0, gameOver: false, won: false
+  };
+  hideOverlay();
+  generateFloor();
+  render();
+  addLog('欢迎来到地牢！用WASD移动，击败怪物，找到楼梯。', 'info');
+}
+
+// ── 地图生成 ──────────────────────────────────────────────
+function generateFloor() {
+  const m = Array.from({length:ROWS}, () => Array(COLS).fill(1));
+  const rooms = [];
+
+  // BSP 简化版：随机放置房间
+  for (let i = 0; i < 8; i++) {
+    const w = rand(3,6), h = rand(3,6);
+    const x = rand(1, COLS-w-1), y = rand(1, ROWS-h-1);
+    // 检查重叠
+    let ok = true;
+    for (const r of rooms) {
+      if (x < r.x+r.w+1 && x+w+1 > r.x && y < r.y+r.h+1 && y+h+1 > r.y) { ok=false; break; }
+    }
+    if (!ok) continue;
+    rooms.push({x,y,w,h});
+    for (let ry=y; ry<y+h; ry++) for (let rx=x; rx<x+w; rx++) m[ry][rx]=0;
+  }
+
+  // 连接房间
+  for (let i=1; i<rooms.length; i++) {
+    const a = roomCenter(rooms[i-1]), b = roomCenter(rooms[i]);
+    carvePath(m, a, b);
+  }
+
+  G.map = m;
+  G.rooms = rooms;
+
+  // 玩家放在第一个房间中心
+  if (rooms.length > 0) {
+    const c = roomCenter(rooms[0]);
+    G.player.x = c.x; G.player.y = c.y;
+  }
+
+  // 楼梯放在最后一个房间
+  const lastRoom = rooms[rooms.length-1] || {x:COLS-3,y:ROWS-3,w:2,h:2};
+  const sc = roomCenter(lastRoom);
+  G.stair = {x:sc.x, y:sc.y};
+
+  // 生成敌人和道具
+  G.enemies = [];
+  G.items = [];
+  const enemyCount = 3 + G.floor * 2;
+  const itemCount = 2 + G.floor;
+
+  for (let i=0; i<enemyCount; i++) spawnEnemy();
+  for (let i=0; i<itemCount; i++) spawnItem();
+
+  addLog(`进入第 ${G.floor} 层地牢。`, 'info');
+  document.getElementById('floor-badge').textContent = `第 ${G.floor} 层`;
+}
+
+function roomCenter(r) { return {x: r.x + Math.floor(r.w/2), y: r.y + Math.floor(r.h/2)}; }
+
+function carvePath(m, a, b) {
+  let {x,y} = a;
+  while (x !== b.x) { m[y][x]=0; x += x<b.x?1:-1; }
+  while (y !== b.y) { m[y][x]=0; y += y<b.y?1:-1; }
+}
+
+function spawnEnemy() {
+  const pos = randomFloorTile();
+  if (!pos) return;
+  const tier = Math.min(3, Math.ceil(Math.random() * (1 + G.floor * 0.5)));
+  const types = [
+    null,
+    {name:'哥布林', char:'G', color:'#e74c3c', hp:15+G.floor*3, atk:4+G.floor, def:0, xp:10, gold:rand(1,5)},
+    {name:'兽人',   char:'O', color:'#e67e22', hp:30+G.floor*5, atk:7+G.floor*2, def:2, xp:25, gold:rand(3,10)},
+    {name:'恶魔',   char:'D', color:'#9b59b6', hp:50+G.floor*8, atk:12+G.floor*3, def:4, xp:50, gold:rand(8,20)},
+  ];
+  const t = types[tier] || types[1];
+  G.enemies.push({...t, x:pos.x, y:pos.y, maxHp:t.hp});
+}
+
+function spawnItem() {
+  const pos = randomFloorTile();
+  if (!pos) return;
+  const r = Math.random();
+  if (r < 0.6) G.items.push({x:pos.x, y:pos.y, type:'heal', char:'+', color:'#2ecc71', val:20+G.floor*5});
+  else G.items.push({x:pos.x, y:pos.y, type:'gold', char:'$', color:'#f1c40f', val:rand(5,15)*G.floor});
+}
+
+function randomFloorTile() {
+  for (let i=0; i<100; i++) {
+    const x=rand(1,COLS-2), y=rand(1,ROWS-2);
+    if (G.map[y][x]===0 && !isOccupied(x,y)) return {x,y};
+  }
+  return null;
+}
+
+function isOccupied(x,y) {
+  if (G.player.x===x && G.player.y===y) return true;
+  if (G.enemies.some(e=>e.x===x&&e.y===y)) return true;
+  if (G.items.some(i=>i.x===x&&i.y===y)) return true;
+  return false;
+}
+
+// ── 输入处理 ──────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (G.gameOver) return;
+  const dirs = {
+    ArrowUp:{dx:0,dy:-1}, ArrowDown:{dx:0,dy:1}, ArrowLeft:{dx:-1,dy:0}, ArrowRight:{dx:1,dy:0},
+    w:{dx:0,dy:-1}, s:{dx:0,dy:1}, a:{dx:-1,dy:0}, d:{dx:1,dy:0},
+    W:{dx:0,dy:-1}, S:{dx:0,dy:1}, A:{dx:-1,dy:0}, D:{dx:1,dy:0},
+  };
+  if (dirs[e.key]) { e.preventDefault(); tryMove(dirs[e.key].dx, dirs[e.key].dy); }
+  if (e.key==='q'||e.key==='Q') useSkill('slash');
+  if (e.key==='e'||e.key==='E') useSkill('heal');
+  if (e.key==='r'||e.key==='R') useSkill('dash');
+});
+
+function tryMove(dx, dy) {
+  const nx = G.player.x + dx, ny = G.player.y + dy;
+  if (nx<0||ny<0||nx>=COLS||ny>=ROWS) return;
+  if (G.map[ny][nx]===1) return;
+
+  // 攻击敌人
+  const ei = G.enemies.findIndex(e=>e.x===nx&&e.y===ny);
+  if (ei >= 0) { attackEnemy(ei); endTurn(); return; }
+
+  G.player.x = nx; G.player.y = ny;
+  if (dx !== 0) G.player.dir = dx;
+  else if (dy !== 0) G.player.dir = dy === -1 ? G.player.dir : G.player.dir; // 保持左右方向
+
+  // 拾取道具
+  const ii = G.items.findIndex(i=>i.x===nx&&i.y===ny);
+  if (ii >= 0) pickItem(ii);
+
+  // 楼梯
+  if (G.stair && nx===G.stair.x && ny===G.stair.y) {
+    G.floor++;
+    if (G.floor > 5) { winGame(); return; }
+    generateFloor();
+  }
+
+  endTurn();
+}
+
+function attackEnemy(ei, multiplier=1) {
+  const e = G.enemies[ei];
+  const dmg = Math.max(1, Math.floor((G.player.atk * multiplier) - e.def + rand(-2,2)));
+  e.hp -= dmg;
+  addLog(`你攻击了${e.name}，造成 <b>${dmg}</b> 点伤害。`, 'dmg');
+  if (e.hp <= 0) {
+    addLog(`击败了${e.name}！获得 ${e.xp} 经验，${e.gold} 金币。`, 'kill');
+    G.player.xp += e.xp;
+    G.player.gold += e.gold;
+    G.enemies.splice(ei, 1);
+    checkLevelUp();
+  }
+}
+
+function pickItem(ii) {
+  const item = G.items[ii];
+  G.items.splice(ii, 1);
+  if (item.type==='heal') {
+    const h = Math.min(item.val, G.player.maxHp - G.player.hp);
+    G.player.hp += h;
+    addLog(`拾取了治疗药水，恢复 ${h} 点生命。`, 'heal');
+  } else {
+    G.player.gold += item.val;
+    addLog(`拾取了 ${item.val} 金币。`, 'item');
+  }
+}
+
+function checkLevelUp() {
+  while (G.player.xp >= G.player.xpNext) {
+    G.player.xp -= G.player.xpNext;
+    G.player.level++;
+    G.player.xpNext = Math.floor(G.player.xpNext * 1.6);
+    G.player.atk += 3;
+    G.player.def += 1;
+    const heal = Math.floor(G.player.maxHp * 0.3);
+    G.player.maxHp += 20;
+    G.player.hp = Math.min(G.player.maxHp, G.player.hp + heal);
+    addLog(`🎉 升级！达到 ${G.player.level} 级！攻击+3，防御+1，生命+20。`, 'level');
+  }
+}
+
+// ── 技能 ──────────────────────────────────────────────────
+function useSkill(name) {
+  if (G.gameOver) return;
+  const sk = G.skills[name];
+  if (sk.cd > 0) { addLog(`技能冷却中 (${sk.cd}回合)`, 'info'); return; }
+
+  if (name==='slash') {
+    // 攻击相邻4格中最近的敌人（优先面朝方向）
+    const candidates = [
+      {dx: G.player.dir, dy: 0},
+      {dx: 0, dy: -1}, {dx: 0, dy: 1},
+      {dx: -G.player.dir, dy: 0}
+    ];
+    let ei = -1;
+    for (const c of candidates) {
+      const tx = G.player.x + c.dx, ty = G.player.y + c.dy;
+      ei = G.enemies.findIndex(e => e.x === tx && e.y === ty);
+      if (ei >= 0) break;
+    }
+    if (ei < 0) { addLog('附近没有敌人。', 'info'); return; }
+    addLog('使用【重斩】！', 'item');
+    attackEnemy(ei, 1.5);
+    sk.cd = sk.maxCd;
+  } else if (name==='heal') {
+    const h = Math.floor(G.player.maxHp * 0.3);
+    G.player.hp = Math.min(G.player.maxHp, G.player.hp + h);
+    addLog(`使用【治愈】，恢复 ${h} 点生命。`, 'heal');
+    sk.cd = sk.maxCd;
+  } else if (name==='dash') {
+    const dx = G.player.dir;
+    let moved = 0;
+    for (let i=1; i<=2; i++) {
+      const nx=G.player.x+dx*i, ny=G.player.y;
+      if (nx<0||nx>=COLS||G.map[ny][nx]===1) break;
+      const ei = G.enemies.findIndex(e=>e.x===nx&&e.y===ny);
+      if (ei>=0) { attackEnemy(ei, 1.2); break; }
+      G.player.x = nx; moved++;
+    }
+    addLog(`使用【冲刺】，移动了 ${moved} 格。`, 'item');
+    sk.cd = sk.maxCd;
+  }
+  endTurn();
+}
+
+// ── 敌人AI ────────────────────────────────────────────────
+function enemyTurn() {
+  for (const e of G.enemies) {
+    const dist = Math.abs(e.x-G.player.x) + Math.abs(e.y-G.player.y);
+    if (dist > 6) continue; // 超出感知范围
+
+    if (dist === 1) {
+      // 攻击玩家
+      const dmg = Math.max(1, e.atk - G.player.def + rand(-1,2));
+      G.player.hp -= dmg;
+      addLog(`${e.name} 攻击你，造成 ${dmg} 点伤害。`, 'dmg');
+      if (G.player.hp <= 0) { G.player.hp=0; gameOver(); return; }
+    } else {
+      // 向玩家移动（简单追踪）
+      const dx = Math.sign(G.player.x - e.x), dy = Math.sign(G.player.y - e.y);
+      const moves = Math.abs(G.player.x-e.x) >= Math.abs(G.player.y-e.y)
+        ? [{dx,dy:0},{dx:0,dy}] : [{dx:0,dy},{dx,dy:0}];
+      for (const mv of moves) {
+        const nx=e.x+mv.dx, ny=e.y+mv.dy;
+        if (nx<0||ny<0||nx>=COLS||ny>=ROWS||G.map[ny][nx]===1) continue;
+        if (G.enemies.some(o=>o!==e&&o.x===nx&&o.y===ny)) continue;
+        if (G.player.x===nx&&G.player.y===ny) continue;
+        e.x=nx; e.y=ny; break;
+      }
+    }
+  }
+}
+
+function endTurn() {
+  G.turn++;
+  // 冷却递减
+  for (const sk of Object.values(G.skills)) if (sk.cd>0) sk.cd--;
+  enemyTurn();
+  updateUI();
+  render();
+}
+
+// ── 渲染 ──────────────────────────────────────────────────
+function drawImg(key, x, y) {
+  ctx.drawImage(IMGS[key], x * TILE, y * TILE, TILE, TILE);
+}
+
+function render() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // 地板 / 墙壁
+  for (let y = 0; y < ROWS; y++) {
+    for (let x = 0; x < COLS; x++) {
+      drawImg(G.map[y][x] === 1 ? 'wall' : 'floor', x, y);
+    }
+  }
+
+  // 楼梯
+  if (G.stair) drawImg('stair', G.stair.x, G.stair.y);
+
+  // 道具
+  for (const item of G.items) {
+    drawImg(item.type === 'heal' ? 'heal' : 'gold', item.x, item.y);
+  }
+
+  // 敌人（图片 + 血条）
+  const charToKey = { G: 'goblin', O: 'orc', D: 'demon' };
+  for (const e of G.enemies) {
+    drawImg('floor', e.x, e.y); // 先垫地板，消除白色背景
+    drawImg(charToKey[e.char] || 'goblin', e.x, e.y);
+    // 血条
+    const bw = TILE - 4, bh = 4;
+    const bx = e.x * TILE + 2, by = e.y * TILE + TILE - 6;
+    ctx.fillStyle = '#400';
+    ctx.fillRect(bx, by, bw, bh);
+    ctx.fillStyle = '#e74c3c';
+    ctx.fillRect(bx, by, Math.floor(bw * (e.hp / e.maxHp)), bh);
+  }
+
+  // 玩家
+  drawImg('floor', G.player.x, G.player.y);
+  drawImg('player', G.player.x, G.player.y);
+}
+
+// ── UI 更新 ───────────────────────────────────────────────
+function updateUI() {
+  const p = G.player;
+  document.getElementById('s-lv').textContent = p.level;
+  document.getElementById('s-hp').textContent = `${p.hp}/${p.maxHp}`;
+  document.getElementById('s-atk').textContent = p.atk;
+  document.getElementById('s-def').textContent = p.def;
+  document.getElementById('s-xp').textContent = `${p.xp}/${p.xpNext}`;
+  document.getElementById('s-gold').textContent = p.gold;
+  document.getElementById('hp-fill').style.width = `${(p.hp/p.maxHp)*100}%`;
+  document.getElementById('xp-fill').style.width = `${(p.xp/p.xpNext)*100}%`;
+
+  // 技能冷却
+  for (const [name, sk] of Object.entries(G.skills)) {
+    const btn = document.getElementById(`sk-${name}`);
+    btn.disabled = sk.cd > 0;
+    let cdEl = btn.querySelector('.cd');
+    if (sk.cd > 0) {
+      if (!cdEl) { cdEl = document.createElement('span'); cdEl.className='cd'; btn.appendChild(cdEl); }
+      cdEl.textContent = sk.cd;
+    } else if (cdEl) cdEl.remove();
+  }
+}
+
+function addLog(msg, cls='info') {
+  const log = document.getElementById('log');
+  const p = document.createElement('p');
+  p.className = cls;
+  p.innerHTML = msg;
+  log.appendChild(p);
+  log.scrollTop = log.scrollHeight;
+  // 最多保留50条
+  while (log.children.length > 50) log.removeChild(log.firstChild);
+}
+
+function gameOver() {
+  G.gameOver = true;
+  showOverlay(`
+    <h2>💀 你已阵亡</h2>
+    <p class="big">到达第 ${G.floor} 层</p>
+    <p>等级 ${G.player.level} &nbsp;|&nbsp; 金币 ${G.player.gold}</p>
+    <br>
+    <button class="btn" onclick="newGame()">再来一局</button>
+  `);
+}
+
+function winGame() {
+  G.gameOver = true;
+  showOverlay(`
+    <h2>🏆 通关！</h2>
+    <p class="big">你征服了所有地牢！</p>
+    <p>等级 ${G.player.level} &nbsp;|&nbsp; 金币 ${G.player.gold}</p>
+    <p>用时 ${G.turn} 回合</p>
+    <br>
+    <button class="btn" onclick="newGame()">再来一局</button>
+  `);
+}
+
+function showOverlay(html) {
+  document.getElementById('overlay-box').innerHTML = html;
+  document.getElementById('overlay').style.display = 'flex';
+}
+
+function hideOverlay() {
+  document.getElementById('overlay').style.display = 'none';
+}
+
+// ── 工具函数 ──────────────────────────────────────────────
+function rand(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+// ── 启动 ──────────────────────────────────────────────────
+preloadImages(() => newGame());
+</script>
+</body>
+</html>
